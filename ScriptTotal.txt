@@ -1,7 +1,7 @@
 :global name [/system identity get name]
-:global versao V1
+:global versao V2
 :global ident [/system identity get name]
 :global CodigoCliente [:pick $ident 0 4]
 if ($CodigoCliente>=0000 && $CodigoCliente<=9999) do={:log warning "Codigo Valido"} else={:log warning "Codigo Invalido"}
-if ($ident~"V1") do={:log warning "Versao ja atualizada"} else={
+if ($ident~"$versao") do={:log warning "Versao ja atualizada"} else={
 /system identity set name="$nome $versao"}
