@@ -1,0 +1,538 @@
+:global idrede 172
+:global idcliente 27
+:global idcond 2
+:global nomecond "TRIANON - ULRIK"
+:global wifinome "TRIANON"
+:global wifisenha "2902-2902"
+:global DDNSmonitoramento1 "he808x98y5r.sn.mynetname.net"
+:global DDNSmonitoramento2 "he808x98y5r.sn.mynetname.net"
+:global idclienteval 0
+:global idcondval 0
+:if ($idcliente <10 ) do={set	$idclienteval "0$idcliente"} else={set $idclienteval $idcliente}
+:if ($idcond <10 ) do={set	$idcondval "0$idcond"} else={set $idcondval $idcond}
+/system backup save name=ANTES_SCRIPT
+:local ranges [/ip pool  find where ranges~"$idrede.$idcliente.0."]
+:if ([:len $ranges ] != 0) do={
+:log error ("Parece que este, é um roteador de BASE, verifique!")
+:return
+} else {:log info ("Parece nao ser um roteador de BASE, entao vamos seguir!")}
+/interface list set [find where name=LAN] name=LAN_LIST
+:local bridge [/interface bridge find where name=LAN]
+:if ([:len $bridge ] = 0) do={ 
+/interface bridge add add-dhcp-option82=yes dhcp-snooping=yes name=LAN} else={ /interface bridge set $bridge add-dhcp-option82=yes dhcp-snooping=yes}
+/interface bridge port
+remove [find]
+:local tftp [/ip tftp find where req-filename=redecliente]
+:if ([:len $tftp ] = 0) do={ 
+/ip tftp add ip-addresses="$idrede.$idcliente.0.0/16" req-filename=redecliente} else={/ip tftp set	$tftp ip-addresses="$idrede.$idcliente.0.0/16"}
+/ppp profile remove [/ppp profile find where !default]
+/ppp profile add name=WAN1 on-up=":local gwrecebido \$\"remote-address\"\r\
+\n:if ([:len \$gwrecebido] > 0) do={\r\
+\n:local wan [/interface get \$interface name]\r\
+\n\r\
+\n# Tratar rota 8.8.8.8\r\
+\n:local interface [/ip route find where comment=\"\$wan-MONITORAMENTO\"]\r\
+\nif ([:len \$interface ] = 0) do={\r\
+\n:log info message=\"Criando rota default: interface \$wan gw \$gwrecebido\"\r\
+\n/ip route add dst-address=8.8.8.8 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$interface gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota default: interface \$wan gw \$gwrecebido\"\r\
+\nip route remove [find where dst-address~\"8.8.8.8\"]\r\
+\n/ip route add dst-address=8.8.8.8 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n}\r\
+\n}\r\
+\n}"
+/ppp profile add name=WAN2 on-up=":local gwrecebido \$\"remote-address\"\r\
+\n:if ([:len \$gwrecebido] > 0) do={\r\
+\n:local wan [/interface get \$interface name]\r\
+\n\r\
+\n# Tratar rota 8.8.4.4\r\
+\n:local interface [/ip route find where comment=\"\$wan-MONITORAMENTO\"]\r\
+\nif ([:len \$interface ] = 0) do={\r\
+\n:log info message=\"Criando rota default: interface \$wan gw \$gwrecebido\"\r\
+\n/ip route add dst-address=8.8.4.4 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$interface gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota default: interface \$wan gw \$gwrecebido\"\r\
+\nip route remove [find where dst-address~\"8.8.4.4\"]\r\
+\n/ip route add dst-address=8.8.4.4 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n}\r\
+\n}\r\
+\n}"
+/ppp profile add name=VPN-LINK1 on-down=":local interf [/interface get \$interface name]\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0\" and comment~\$interf]\r\
+\n/ip route remove [find where dst-address=\$redecliente]" on-up=":local redecliente [/ip tftp get value-name=ip-addresses [/ip tftp find where req-filename=redecliente]]\r\
+\n:local interf [/interface get \$interface name]\r\
+\n:local gwrecebido \$\"remote-address\"\r\
+\n:local rota [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf REDE SUPORTE\" gateway=\$gwrecebido distance=3\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf-REDE SUPORTE\" gateway=\$gwrecebido distance=3\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE SUPORTE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address~\"172.16.0.0/12\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=3\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0/12\" and comment~\$interf]\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=3\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf STRIKE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address=\$redecliente and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE CLIENTE: interface REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=1\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE CLIENTE: interface \$interf REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route remove [find where dst-address=\$redecliente]\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=1\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE CLIENTE\"}\r\
+\n}\r\
+\n"
+/ppp profile add name=VPN-LINK2 on-down=":local interf [/interface get \$interface name]\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0\" and comment~\$interf]\r\
+\n/ip route remove [find where dst-address=\$redecliente]" on-up=":local redecliente [/ip tftp get value-name=ip-addresses [/ip tftp find where req-filename=redecliente]]\r\
+\n:local interf [/interface get \$interface name]\r\
+\n:local gwrecebido \$\"remote-address\"\r\
+\n:local rota [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf REDE SUPORTE\" gateway=\$gwrecebido distance=4\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf-REDE SUPORTE\" gateway=\$gwrecebido distance=4\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE SUPORTE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address~\"172.16.0.0/12\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=4\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0\" and comment~\$interf]\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=4\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf STRIKE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address=\$redecliente and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE CLIENTE: interface REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=2\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE CLIENTE: interface \$interf REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route remove [find where dst-address=\$redecliente]\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=2\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE CLIENTE\"}\r\
+\n}\r\
+\n"
+/ppp profile add name=VPN-BKP-LINK1 on-down=":local interf [/interface get \$interface name]\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0\" and comment~\$interf]\r\
+\n/ip route remove [find where dst-address=\$redecliente]" on-up=":local redecliente [/ip tftp get value-name=ip-addresses [/ip tftp find where req-filename=redecliente]]\r\
+\n:local interf [/interface get \$interface name]\r\
+\n:local gwrecebido \$\"remote-address\"\r\
+\n:local rota [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf REDE SUPORTE\" gateway=\$gwrecebido distance=1\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf-REDE SUPORTE\" gateway=\$gwrecebido distance=1\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE SUPORTE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address~\"172.16.0.0/12\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=1\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0\" and comment~\$interf]\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=1\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf STRIKE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address=\$redecliente and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE CLIENTE: interface REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=3\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE CLIENTE: interface \$interf REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route remove [find where dst-address=\$redecliente]\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=3\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE CLIENTE\"}\r\
+\n}\r\
+\n"
+/ppp profile add name=VPN-BKP-LINK2 on-down=":local interf [/interface get \$interface name]\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0\" and comment~\$interf]\r\
+\n/ip route remove [find where dst-address=\$redecliente]" on-up=":local redecliente [/ip tftp get value-name=ip-addresses [/ip tftp find where req-filename=redecliente]]\r\
+\n:local interf [/interface get \$interface name]\r\
+\n:local gwrecebido \$\"remote-address\"\r\
+\n:local rota [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf REDE SUPORTE\" gateway=\$gwrecebido distance=2\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE SUPORTE: interface \$interf gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"10.0.0.0\" and comment~\$interf]\r\
+\n/ip route add dst-address=10.0.0.0/8 comment=\"\$interf-REDE SUPORTE\" gateway=\$gwrecebido distance=2\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE SUPORTE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address~\"172.16.0.0/12\" and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=2\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE STRIKE: interface \$interf STRIKE gw \$gwrecebido\"\r\
+\n/ip route remove [/ip route find where dst-address~\"172.16.0.0\" and comment~\$interf]\r\
+\n/ip route add dst-address=172.16.0.0/12 comment=\"\$interf REDE STRIKE\" gateway=\$gwrecebido distance=2\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf STRIKE\"}\r\
+\n}\r\
+\n:local rota [/ip route find where dst-address=\$redecliente and comment~\$interf]\r\
+\nif ([:len \$rota ] = 0) do={\r\
+\n:log info message=\"Criando rota REDE CLIENTE: interface REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=4\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$rota gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota REDE CLIENTE: interface \$interf REDE CLIENTE gw \$gwrecebido\"\r\
+\n/ip route remove [find where dst-address=\$redecliente]\r\
+\n/ip route add dst-address=\$redecliente comment=\"\$interf-REDE CLIENTE\" gateway=\$gwrecebido distance=4\r\
+\n} else={:log info \"N\E3o foi preciso alterar \$interf REDE CLIENTE\"}\r\
+\n}\r\
+\n"
+/ppp profile add name=VPN-NAT
+/interface ethernet set [find where default-name=ether1] name=ether1
+/interface ethernet set [find where default-name=ether2] name=ether2
+:local pppoe1 [/interface pppoe-client find where interface=ether1]
+:if ([:len $pppoe1 ] != 0) do={/interface pppoe-client set [find where interface=ether1] name=WAN1 profile=WAN1 add-default-route=yes default-route-distance=101} else {/interface ethernet set [ find default-name=ether1 ] name=WAN1}
+:local pppoe2 [/interface pppoe-client find where interface=ether2]
+:if ([:len $pppoe2 ] != 0) do={/interface pppoe-client set [find where interface=ether2] name=WAN2 profile=WAN2 add-default-route=yes default-route-distance=102} else {/interface ethernet set [ find default-name=ether2 ] name=WAN2}
+/interface eoip remove [find]
+/interface bonding remove [find]
+/interface list 
+remove [find where !builtin]
+add name=WAN-LIST
+/ip pool 
+remove [find]
+add name=DHCP ranges="$idrede.$idcliente.$idcond.100-$idrede.$idcliente.$idcond.200"
+/ip dhcp-server 
+remove [find]
+add address-pool=DHCP authoritative=after-2sec-delay disabled=no interface=LAN name=DHCP
+/ip dhcp-server network 
+remove [find]
+add address="$idrede.$idcliente.$idcond.0/24" dns-server="$idrede.$idcliente.$idcond.254" gateway="$idrede.$idcliente.$idcond.254"
+/user set admin disabled=no
+/user remove [find where name!=admin]
+/user set [find where name=admin] password=Strike123!@#
+/user add name=suporte password=Strike123!@# group=full
+/snmp community
+set [ find default=yes ] addresses="10.0.0.0/8,172.16.0.0/12" write-access=yes
+/snmp
+set enabled=yes trap-generators="" trap-version=2
+/interface list member
+remove [find]
+add interface=WAN1 list=WAN-LIST
+add interface=WAN2 list=WAN-LIST
+/ip address remove [/ip address find where interface=LAN]
+/ip address remove [find where invalid ]
+/ip address
+add address="$idrede.$idcliente.$idcond.254/24" interface=LAN network="$idrede.$idcliente.$idcond.0"
+/ip dhcp-client remove [find]
+/ip dhcp-client
+:if ([:len $pppoe2 ] = 0) do={
+add default-route-distance=102 disabled=no interface=WAN2 script=":local gwrecebido \$\"gateway-address\"\r\
+\n:if ([:len \$gwrecebido] > 0) do={\r\
+\n:local wan \$interface\r\
+\n\r\
+\n# Tratar rota 8.8.4.4\r\
+\n:local interface [/ip route find where comment=\"\$wan-MONITORAMENTO\"]\r\
+\nif ([:len \$interface ] = 0) do={\r\
+\n:log info message=\"Criando rota default: interface \$wan gw \$gwrecebido\"\r\
+\n/ip route add dst-address=8.8.4.4 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$interface gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota default: interface \$wan gw \$gwrecebido\"\r\
+\n/ip route remove [find where dst-address~\"8.8.4.4\"]\r\
+\n/ip route add dst-address=8.8.4.4 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n}\r\
+\n}\r\
+\n}"}
+:if ([:len $pppoe1 ] = 0) do={
+add default-route-distance=101 disabled=no interface=WAN1 script=":local gwrecebido \$\"gateway-address\"\r\
+\n:if ([:len \$gwrecebido] > 0) do={\r\
+\n:local wan \$interface\r\
+\n\r\
+\n# Tratar rota 8.8.8.8\r\
+\n:local interface [/ip route find where comment=\"\$wan-MONITORAMENTO\"]\r\
+\nif ([:len \$interface ] = 0) do={\r\
+\n:log info message=\"Criando rota default: interface \$wan gw \$gwrecebido\"\r\
+\n/ip route add dst-address=8.8.8.8 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n} else {\r\
+\n:local gwatual [/ip route get \$interface gateway]\r\
+\n:if (\$gwrecebido != \$gwatual) do={\r\
+\n:log info message=\"Atualizando rota default: interface \$wan gw \$gwrecebido\"\r\
+\n/ip route remove [find where dst-address~\"8.8.8.8\"]\r\
+\n/ip route add dst-address=8.8.8.8 comment=\"\$wan-MONITORAMENTO\" gateway=\$gwrecebido scope=10\r\
+\n}\r\
+\n}\r\
+\n}"}
+/ip dns
+set allow-remote-requests=yes servers=8.8.8.8,208.67.222.222
+/ip firewall address-list
+remove [find where !dynamic]
+add address=link1.striketi.com.br list=VPN-BKP-LINK1
+add address=link2.striketi.com.br list=VPN-BKP-LINK2
+add address=$DDNSmonitoramento1 list=VPN-LINK1
+add address=$DDNSmonitoramento2 list=VPN-LINK2
+add address=10.0.0.0/8 list=REDE-INTERNA
+add address=172.16.0.0/12 list=REDE-INTERNA
+/ip service set winbox port=8291 disabled=no
+/ip service set ssh port=22 disabled=no
+/ip firewall filter 
+remove [find]
+add action=accept chain=output dst-address=8.8.8.8 out-interface=WAN1
+add action=accept chain=output dst-address=8.8.4.4 out-interface=WAN2
+add action=drop chain=output dst-address=8.8.8.8
+add action=drop chain=output dst-address=8.8.4.4
+add action=drop chain=input comment="BLOQUEIA DNS UDP" dst-port=53 in-interface-list=WAN-LIST protocol=udp
+add action=drop chain=input comment="BLOQUEIA DNS TCP" dst-port=53 in-interface-list=WAN-LIST protocol=tcp
+add action=drop chain=input comment="CONEXOES INVALIDAS" connection-state=invalid
+add action=accept chain=forward comment="ACEITA CONEXOES REDE-INTERNA" src-address-list=REDE-INTERNA
+add action=accept chain=input comment="ACEITA CONEX\D5ES ESTABELECIDAS E RELACIONADAS" connection-state=established,related
+add action=accept chain=input comment="Libera ping exceto WAN-LIST" in-interface-list=!WAN-LIST protocol=icmp
+add action=accept chain=input comment=PPTP in-interface-list=WAN-LIST protocol=gre
+add action=accept chain=input comment=PPTP dst-port=1723 in-interface-list=WAN-LIST protocol=tcp
+add action=accept chain=input comment="L2TP com IPSec" dst-port=1701,4500,500 in-interface-list=WAN-LIST protocol=udp
+add action=accept chain=input comment=SSTP dst-port=443 in-interface-list=WAN-LIST protocol=tcp
+add action=accept chain=input comment=OVPN dst-port=1194 in-interface-list=WAN-LIST protocol=tcp
+add action=add-src-to-address-list address-list=REDE-INTERNA address-list-timeout=1h chain=input comment="ABRE PORTA PARA O SUPORTE" dst-port=1309 in-interface-list=WAN-LIST protocol=tcp
+add action=accept chain=input comment="Winbox somente se estiver na lista REDE-INTERNA" dst-port=8291 in-interface-list=WAN-LIST protocol=tcp src-address-list=REDE-INTERNA
+add action=jump chain=input comment="CONTROLE DE ICMP" in-interface-list=WAN-LIST jump-target=ICMP protocol=icmp
+add action=add-src-to-address-list address-list=BLACKLIST address-list-timeout=4w2d chain=input comment="Detecta PortScan Porta Padrao" dst-port=20-25,3389,8291,8728,8729 in-interface-list=WAN-LIST protocol=tcp src-address-list=!REDE-INTERNA
+add action=add-src-to-address-list address-list=BLACKLIST address-list-timeout=4w2d chain=input comment="Detecta PortScan" in-interface-list=WAN-LIST protocol=tcp psd=21,3s,3,1
+add action=add-src-to-address-list address-list=BLACKLIST address-list-timeout=4w2d chain=input comment="Detecta PortScan" in-interface-list=WAN-LIST protocol=udp psd=21,3s,3,1
+add action=drop chain=input comment="DROP GERAL SOMENTE VINDO DA WAN-LIST" in-interface-list=WAN-LIST
+add action=accept chain=ICMP comment="echo reply" icmp-options=0:0-255 limit=1,30:packet protocol=icmp
+add action=accept chain=ICMP comment="destination unreachable" icmp-options=3:0-255 limit=1,30:packet protocol=icmp
+add action=accept chain=ICMP comment="echo request" icmp-options=8:0-255 limit=1,30:packet protocol=icmp
+add action=accept chain=ICMP comment="time exceeded" icmp-options=11:0-255 limit=1,30:packet protocol=icmp
+add action=drop chain=ICMP comment="DROP ICMP Restante" protocol=icmp
+/ip firewall nat
+add action=redirect chain=dstnat comment="REDIRECIONAMENTO DNS" dst-port=53 in-interface=LAN protocol=udp to-ports=53
+add action=masquerade chain=srcnat comment="MASK WAN" out-interface-list=WAN-LIST
+/ip firewall service-port set sip disabled=yes
+/ip firewall raw 
+remove [find]
+add action=accept chain=prerouting comment=SUPORTE src-address-list=SUPORTE
+add action=drop chain=prerouting comment=BLACKLIST src-address-list=BLACKLIST
+/ip route
+remove [find where !dynamic and !(comment~"IP FIXO")]
+/ip route
+add check-gateway=ping comment="ROTA MARCADA WAN1" distance=10 gateway=8.8.8.8 routing-mark=WAN1
+add check-gateway=ping comment="ROTA MARCADA WAN2" distance=10 gateway=8.8.4.4 routing-mark=WAN2
+add check-gateway=ping comment="ROTA MARCADA NAT" distance=10 gateway="$idrede.$idcliente.1$idcondval.31" routing-mark=NAT
+add check-gateway=ping comment="ROTA PADRAO WAN1" distance=10 gateway=8.8.8.8
+add check-gateway=ping comment="ROTA PADRAO WAN2" distance=20 gateway=8.8.4.4
+/system script
+remove [find]
+add dont-require-permissions=yes name=Backup policy=\
+ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source=":\
+log info \"INICIANDO BACKUP\";\r\
+\n/system backup save name=[/system identity get name]\r\
+\n/system package print file \"\$[/system identity get name]_Version.txt\"\
+\r\
+\n/export file=\"\$[/system identity get name].rsc\"\r\
+\n:delay 00:00:20\r\
+\n/tool e-mail send file=\"\$[/system identity get name].backup,\$[/system\
+\_identity get name].rsc,\$[/system identity get name]_Version.txt\" to=ba\
+ckup@striketi.com.br body=\"\$[/system identity get name] ARQUIVO DE BACK\
+UP ANEXADO.\" subject=\"\$[/system identity get name] \$[/system clock get\
+\_date] at \$[/system clock get time] - \$[/system routerboard get model] -  Backup\""
+add dont-require-permissions=no name=StatusLinkLINK1 owner=admin policy=\
+ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source=":global status [/tool netwatch get value\
+-name=status [find host=8.8.8.8]]\r\
+\nif (status = \"up\") do={\r\
+\n:put 1\r\
+\n} else= {\r\
+\n:put 0\r\
+\n}"
+add dont-require-permissions=no name=StatusLinkLINK2 owner=admin policy=\
+ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source=":global status [/tool netwatch get value\
+-name=status [find host=8.8.4.4]]\r\
+\nif (status = \"up\") do={\r\
+\n:put 1\r\
+\n} else= {\r\
+\n:put 0\r\
+\n}"
+add dont-require-permissions=no name=VerificaVPN owner=suporte policy=\
+    ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source=":lo\
+    cal VPNs [/interface find running name~\"VPN\"]\r\
+    \n:local L2TP [/interface find running name~\"VPN-LINK1\"]\r\
+    \n:local SSTP [/interface find running name~\"VPN-LINK2\"]\r\
+    \n:local uptime [/system resource get uptime]\r\
+    \n\r\
+    \n:if (\$uptime < \"00:15:00\") do={\r\
+    \n    /log info \"TEMPO MENOR\"\r\
+    \n} else {\r\
+    \n    /log info \"TEMPO MAIOR\"\r\
+    \n\r\
+    \n:if (\$VPNs != \"\") do={\r\
+    \n    /interface ovpn-client disable RESERVA\r\
+    \n} else {\r\
+    \n    /interface sstp-client disable [find where name~\"LINK2\"]\r\
+    \n    :delay 5\r\
+    \n\r\
+    \n    /interface ovpn-client enable RESERVA\r\
+    \n}\r\
+    \n:if (\$L2TP = \"\") do={} else {\r\
+    \n    /interface ovpn-client disable RESERVA\r\
+    \n:if (\$SSTP != \"\") do={} else {\r\
+    \n    /interface sstp-client enable [find where name~\"VPN-LINK2\"]\r\
+    \n}}\r\
+    \n:delay 10\r\
+    \n:set VPNs [/interface find running name~\"VPN\" or name=\"RESERVA\"]\r\
+    \n:if (\$VPNt != \"\") do={\r\
+    \n    /log info \"VPN CONECTADA\"\r\
+    \n} else {\r\
+    \n    /log info \"REINICIANDO\"\r\
+    \n    /system reboot\r\
+    \n}\r\
+    \n}\r\
+    \n"
+add dont-require-permissions=yes name=ping owner=admin policy=\
+    ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon source=":lo\
+    cal ip \"1.1.1.1\"\r\
+    \n:local lat 100\r\
+    \n:local qtd 1000\r\
+    \n\r\
+    \n:local e\r\
+    \n:local l\r\
+    \n:local r\r\
+    \n:local maxL\r\
+    \n:local minL\r\
+    \n\r\
+    \n/tool flood-ping \$ip size=100 count=\$qtd do={\r\
+    \n    :if (\$received > 0) do={\r\
+    \n        :set l \$\"avg-rtt\"\r\
+    \n        :set maxL \$\"max-rtt\"\r\
+    \n        :set minL \$\"min-rtt\"\r\
+    \n    }\r\
+    \n    :set e \$sent\r\
+    \n    :set r \$received\r\
+    \n}\r\
+    \n\r\
+    \n:local loss ((\$qtd - \$r) * 100 / \$qtd)\r\
+    \n:log warning (\"Lat\EAncia m\E9dia de \$l ms - Lat\EAncia aceit\E1vel de \
+    \$lat ms (min: \$minL max: \$maxL) - Perda de pacotes: \$loss% (Enviados:\$q\
+    td Recebidos:\$r)\")"
+
+/tool e-mail
+set address=smtp.hostinger.com from="$[/system identity get name] <backup@striketi.com.br>" password=Strike123!@# port=587 start-tls=yes user=backup@striketi.com.br
+/system scheduler
+remove [find]
+add interval=10d name=Backup on-event=Backup policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon start-time=([/system clock get time] + 00:05:00)
+add interval=5m name=VerificaVPN on-event=VerificaVPN policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon start-time=([/system clock get time] + 00:05:00)
+add interval=1m name=Ping on-event=ping policy=ftp,reboot,read,write,policy,test,password,sniff,sensitive,romon start-time=([/system clock get time] + 00:01:00)
+
+/tool netwatch
+remove [find]
+add down-script="ip firewall connection remove [find dst-address~\"5060\"]\r\
+    \n:log info \"8.8.8.8 DOWN\"" host=8.8.8.8 interval=30s timeout=200ms up-script=\
+    "ip firewall connection remove [find dst-address~\"5060\"]\r\
+    \n:log info \"8.8.8.8 UP\""
+add down-script=":log info \"8.8.4.4 DOWN\"" host=8.8.4.4 interval=30s timeout=200ms up-script=":log info \"8.8.4.4 UP\""
+add host="$idrede.$idcliente.1$idcondval.31" interval=3s
+/ip cloud
+set ddns-enabled=yes ddns-update-interval=1m
+/ip ssh
+set allow-none-crypto=yes forwarding-enabled=remote
+/system clock
+set time-zone-name=America/Sao_Paulo
+/system identity
+set name="$idclienteval$idcondval - $nomecond"
+/system ntp client
+set enabled=yes primary-ntp=200.160.0.8
+/interface bridge port
+:foreach iface in=[/interface find where name~"ether"] do={
+  :local interfaceName [/interface get $iface name]
+  :if ($interfaceName !="ether1" && $interfaceName !="ether2") do={
+    add bridge=LAN interface=$interfaceName
+  }}
+:local wireless [/interface wireless find where [find]]
+:if ([:len $wireless ] != 0) do={ 
+/interface wireless security-profiles
+remove [find where name!=default]
+add authentication-types=wpa2-psk mode=dynamic-keys name="$idclienteval$idcondval" wpa2-pre-shared-key="$wifisenha"
+/interface wireless set $wireless name=wlan1 disabled=no frequency=auto mode=ap-bridge security-profile="$idclienteval$idcondval" ssid="$wifinome"
+/interface bridge port add bridge=LAN interface=wlan1}
+/interface l2tp-client 
+add connect-to=$DDNSmonitoramento1 disabled=no name="$idclienteval$idcondval-VPN-LINK1" password="$idclienteval$idcondval-VPN-LINK1" profile=VPN-LINK1 user="$idclienteval$idcondval-VPN-LINK1"
+add connect-to="$idrede.$idcliente.0.254" disabled=no name="$idclienteval$idcondval-VPN-NAT" password="$idclienteval$idcondval-VPN-NAT" profile=VPN-NAT user="$idclienteval$idcondval-VPN-NAT"
+add connect-to=link1.striketi.com.br disabled=no name="$idclienteval$idcondval-VPN-BKP-LINK1" password="$idclienteval$idcondval-VPN-BKP-LINK1" profile=VPN-BKP-LINK1 user="$idclienteval$idcondval-VPN-BKP-LINK1"
+/interface sstp-client
+add connect-to=$DDNSmonitoramento2 disabled=no name="$idclienteval$idcondval-VPN-LINK2" password="$idclienteval$idcondval-VPN-LINK2" profile=VPN-LINK2 user="$idclienteval$idcondval-VPN-LINK2"
+add connect-to=link2.striketi.com.br disabled=no name="$idclienteval$idcondval-VPN-BKP-LINK2" password="$idclienteval$idcondval-VPN-BKP-LINK2" profile=VPN-BKP-LINK2 user="$idclienteval$idcondval-VPN-BKP-LINK2"
+/interface list member add interface="$idclienteval$idcondval-VPN-NAT" list=WAN-LIST
+/ip firewall mangle
+add action=accept chain=prerouting comment="BYPASS REDE INTERNA (EXCESSAO)" dst-address-list=REDE-INTERNA src-address-list=REDE-INTERNA disabled=yes
+add action=mark-connection chain=output comment="MARCA DIRECAO BASE1" dst-address-list=VPN-LINK1 new-connection-mark=Link1-Conexao passthrough=yes disabled=yes
+add action=mark-connection chain=output comment="MARCA DIRECAO BASE2" dst-address-list=VPN-LINK2 new-connection-mark=Link2-Conexao passthrough=yes disabled=yes
+add action=mark-connection chain=output comment="MARCA DIRECAO BKP BASE1" dst-address-list=VPN-BKP-LINK1 new-connection-mark=Link1-Conexao passthrough=yes disabled=yes
+add action=mark-connection chain=output comment="MARCA DIRECAO BKP BASE2" dst-address-list=VPN-BKP-LINK2 new-connection-mark=Link2-Conexao passthrough=yes disabled=yes
+add action=mark-connection chain=prerouting comment="ENTRADA LINK 1" in-interface=WAN1 new-connection-mark=Link1-Conexao passthrough=yes disabled=yes
+add action=mark-connection chain=prerouting comment="ENTRADA LINK 2" in-interface=WAN2 new-connection-mark=Link2-Conexao passthrough=yes disabled=yes
+add action=mark-connection chain=prerouting comment="ENTRADA LINK NAT" in-interface="$idclienteval$idcondval-VPN-NAT" new-connection-mark=LinkNat-Conexao passthrough=yes disabled=yes
+add action=mark-routing chain=output comment="SAIDA LINK 1" connection-mark=Link1-Conexao new-routing-mark=WAN1 passthrough=no disabled=yes
+add action=mark-routing chain=output comment="SAIDA LINK 2" connection-mark=Link2-Conexao new-routing-mark=WAN2 passthrough=no disabled=yes
+add action=mark-routing chain=output comment="SAIDA LINK NAT" connection-mark=LinkNat-Conexao new-routing-mark=NAT passthrough=no disabled=yes
+add action=mark-routing chain=prerouting comment="SAIDA NAT LINK 1" connection-mark=Link1-Conexao new-routing-mark=WAN1 passthrough=yes in-interface=LAN disabled=yes
+add action=mark-routing chain=prerouting comment="SAIDA NAT LINK 2" connection-mark=Link2-Conexao new-routing-mark=WAN2 passthrough=yes in-interface=LAN disabled=yes
+add action=mark-routing chain=prerouting comment="SAIDA NAT LINK NAT" connection-mark=LinkNat-Conexao new-routing-mark=NAT passthrough=yes in-interface=LAN disabled=yes
+/ip service
+set api disabled=no port=8728 address=""
+set api-ssl disabled=no port=8729 address=""
+set ftp disabled=no port=21 address=""
+set ssh disabled=no port=22 address=""
+set telnet disabled=no port=23 address=""
+set winbox disabled=no port=8291 address=""
+set www disabled=no port=80 address=""
+/system logging action
+set [find where name=disk] disk-lines-per-file=10000 disk-file-count=2
+/system logging
+set [find where name!="dddddd"] action=disk
+/log info "FIM DO SCRITP DE ATUALIZAÇÃO"
